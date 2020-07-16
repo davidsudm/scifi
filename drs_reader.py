@@ -20,7 +20,7 @@ with DRS4BinaryFile('/Users/lonewolf/Desktop/rootfiles/mu3e_data/scsf78-30cm.dat
                       np.cumsum(time_widths[2]),
                       np.cumsum(time_widths[3])])
 
-    times = np.insert(times, 0, 0, axis=1)
+    # times = np.insert(times, 0, 0, axis=1)
 
     #event = next(f)
 
@@ -48,7 +48,7 @@ with DRS4BinaryFile('/Users/lonewolf/Desktop/rootfiles/mu3e_data/scsf78-30cm.dat
 
         adc_data = np.insert(adc_data, 0, 0, axis=1)
 
-        fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
+        fig, axs = plt.subplots(2, 2, sharex="True", sharey="True")
 
         # Triggers
         axs[0, 0].plot(times[1], adc_data[1], color='red')

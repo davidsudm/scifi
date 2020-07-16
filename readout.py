@@ -18,6 +18,7 @@ from drs4 import DRS4BinaryFile
 import os
 import re
 import numpy as np
+import time
 
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnchoredText
@@ -46,15 +47,17 @@ def read_data(file, min_amplitude=0.005, debug=False):
         board_id = f.board_ids[0]
         active_channels = f.channels
 
-        time_widths = [f.time_widths[board_id][1],
-                       f.time_widths[board_id][2],
-                       f.time_widths[board_id][3],
-                       f.time_widths[board_id][4]]
+        time_widths = np.array([f.time_widths[board_id][1],
+                                f.time_widths[board_id][2],
+                                f.time_widths[board_id][3],
+                                f.time_widths[board_id][4]])
 
         times = np.array([np.cumsum(time_widths[0]),
                           np.cumsum(time_widths[1]),
                           np.cumsum(time_widths[2]),
                           np.cumsum(time_widths[3])])
+
+        # times = np.insert(times, 0, 0, axis=1)
 
         for event in f:
 
@@ -73,17 +76,17 @@ def read_data(file, min_amplitude=0.005, debug=False):
 
             event_id = event.event_id
             event_timestamp = event.timestamp
-            event_range_center = event.range_center
-            event_scalers = [event.scalers[board_id][1],
-                             event.scalers[board_id][2],
-                             event.scalers[board_id][3],
-                             event.scalers[board_id][4]]
+            event_rc = event.range_center
+            event_scalers = np.array([event.scalers[board_id][1],
+                                      event.scalers[board_id][2],
+                                      event.scalers[board_id][3],
+                                      event.scalers[board_id][4]])
             event_trigger_cell = event.trigger_cells[board_id]
 
-            adc_data = [event.adc_data[board_id][1],
-                        event.adc_data[board_id][2],
-                        event.adc_data[board_id][3],
-                        event.adc_data[board_id][4]]
+            adc_data = np.array([event.adc_data[board_id][1],
+                                 event.adc_data[board_id][2],
+                                 event.adc_data[board_id][3],
+                                 event.adc_data[board_id][4]])
 
             # adc_data = np.insert(adc_data, 0, 0, axis=1)
 
@@ -92,25 +95,25 @@ def read_data(file, min_amplitude=0.005, debug=False):
                 print('active channels : ', active_channels[board_id])
                 print('event id :', event_id)
                 print('event timestamp :', event_timestamp)
-                print('event range center :', event_range_center)
+                print('event range center :', event_rc)
                 print('event scaler :', event_scalers)
                 print('event trigger cell :', event_trigger_cell)
 
             #yield board_id, active_channels, time_widths, event_id, event_timestamp, event_range_center, event_scalers, event_trigger_cell, adc_data
-            yield time_widths, times, adc_data, event_range_center
+            yield time_widths, times, adc_data, event_rc
 
 
 def get_float_waveform(adc_waveform_matrix, range_center):
     """
     :param adc_waveform_matrix:     Matrix containing the ADC counts as amplitude of the n channels of the DRS4 board.
                                     Each row is an ADC waveform.
-    :param range_center:            Range center given by the board
+    :param range_center:            Range center given by the board in mV (needs to be divided by 1000 be in V)
     :return:                        Matrix containing the amplitudes of the n channels of the DRS4 board in Volts
     """
     # Get the range according to the range center defined
-    amplitude_range = -0.5 + range_center/1000.
+    amplitude_low_edge = -0.5 + range_center/1000.
     # Amplitude in volts
-    amplitude = adc_waveform_matrix/(np.power(2, 16)) + amplitude_range
+    amplitude = adc_waveform_matrix/(np.power(2, 16)-1) + amplitude_low_edge
 
     return amplitude
 
@@ -144,35 +147,89 @@ def entry():
     output_dir = convert_text(args['--output_dir'])
     debug = args['--debug']
 
-    print('output_dir : ', output_dir)
+    print('Output dir : ', output_dir)
     print('File :', file)
+    print('Debug :', debug)
 
-    waveforms = read_data(file, debug=False)
-    bins_y = np.linspace(-0.05, 1.00, 200)
+    start_time = time.time()
+
+    waveforms = read_data(file=file, debug=False)
+    # Waveform was set from -0.05 to 0.95 mV
+    bins_y = np.linspace(-0.10, 1.0, 221)
+    times = []
+    bin_edges = []
+
     event_counter = 0
 
-    for time_widths, times, adc_data, event_range_center in waveforms:
+    for time_widths, times, adc_data, event_rc in waveforms:
+
         if event_counter % 1000 == 0:
             print('Event id :', event_counter)
-        adc_data = get_float_waveform(adc_data, event_range_center)
 
-        temp_histo2d_ch0, xedges_ch0, yedges_ch0 = np.histogram2d(times[0], adc_data[0], bins=[times[0], bins_y])
-        temp_histo2d_ch1, xedges_ch1, yedges_ch1 = np.histogram2d(times[1], adc_data[1], bins=(times[1], bins_y))
-        temp_histo2d_ch2, xedges_ch2, yedges_ch2 = np.histogram2d(times[2], adc_data[2], bins=(times[2], bins_y))
-        temp_histo2d_ch3, xedges_ch3, yedges_ch3 = np.histogram2d(times[3], adc_data[3], bins=(times[3], bins_y))
+        if event_counter is 0:
 
-        if event_counter != 0:
+            times = np.insert(times, 0, 0, axis=1)
+            times = np.delete(times, -1, axis=1)
+            bin_edges = time_widths / 2 + times
+
+            fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
+            # Triggers
+            ax[0, 0].hist(time_widths[1], 100, color='tab:red', label="Ch. 1 : Trigger", histtype='step')
+            ax[0, 0].legend()
+            ax[0, 1].hist(time_widths[3], 100, color='tab:red', label="Ch. 3 : Trigger", histtype='step')
+            ax[0, 1].legend()
+            # Signals
+            ax[1, 0].hist(time_widths[0], 100, color='tab:green', label="Ch. 0 : Signal", histtype='step')
+            ax[1, 0].legend()
+            ax[1, 1].hist(time_widths[2], 100, color='tab:green', label="Ch. 2 : Signal", histtype='step')
+            ax[1, 1].legend()
+
+            ax[1, 0].set_xlabel(r'$\Delta$ Time [ns]')
+            ax[1, 1].set_xlabel(r'$\Delta$ Time [ns]')
+            ax[0, 0].set_ylabel('Counts')
+            ax[1, 0].set_ylabel('Counts')
+            plt.tight_layout()
+            plt.savefig('{}/time_width_dist.png'.format(output_dir))
+            plt.close(fig)
+
+            fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
+            # Triggers
+            ax[0, 0].hist(times[1], bins=bin_edges[1], color='tab:red', label="Ch. 1 : Trigger", histtype='step')
+            ax[0, 0].legend()
+            ax[0, 1].hist(times[3], bins=bin_edges[3], color='tab:red', label="Ch. 3 : Trigger", histtype='step')
+            ax[0, 1].legend()
+            # Signals
+            ax[1, 0].hist(times[0], bins=bin_edges[0], color='tab:green', label="Ch. 0 : Signal", histtype='step')
+            ax[1, 0].legend()
+            ax[1, 1].hist(times[2], bins=bin_edges[2], color='tab:green', label="Ch. 2 : Signal", histtype='step')
+            ax[1, 1].legend()
+
+            ax[1, 0].set_xlabel(r'Time [ns]')
+            ax[1, 1].set_xlabel(r'Time [ns]')
+            ax[0, 0].set_ylabel('Counts')
+            ax[1, 0].set_ylabel('Counts')
+            plt.tight_layout()
+            plt.savefig('{}/times_dist.png'.format(output_dir))
+            plt.close(fig)
+
+        adc_data = get_float_waveform(adc_data, event_rc)
+
+        temp_histo2d_ch0, xedges_ch0, yedges_ch0 = np.histogram2d(times[0], adc_data[0], bins=[bin_edges[0], bins_y])
+        temp_histo2d_ch1, xedges_ch1, yedges_ch1 = np.histogram2d(times[1], adc_data[1], bins=[bin_edges[1], bins_y])
+        temp_histo2d_ch2, xedges_ch2, yedges_ch2 = np.histogram2d(times[2], adc_data[2], bins=[bin_edges[2], bins_y])
+        temp_histo2d_ch3, xedges_ch3, yedges_ch3 = np.histogram2d(times[3], adc_data[3], bins=[bin_edges[3], bins_y])
+
+        if event_counter == 0:
+            histo2d_ch0 = np.zeros_like(temp_histo2d_ch0)
+            histo2d_ch1 = np.zeros_like(temp_histo2d_ch1)
+            histo2d_ch2 = np.zeros_like(temp_histo2d_ch2)
+            histo2d_ch3 = np.zeros_like(temp_histo2d_ch3)
+        else:
 
             histo2d_ch0 += temp_histo2d_ch0
             histo2d_ch1 += temp_histo2d_ch1
             histo2d_ch2 += temp_histo2d_ch2
             histo2d_ch3 += temp_histo2d_ch3
-
-        else:
-            histo2d_ch0 = temp_histo2d_ch0
-            histo2d_ch1 = temp_histo2d_ch1
-            histo2d_ch2 = temp_histo2d_ch2
-            histo2d_ch3 = temp_histo2d_ch3
 
         event_counter += 1
 
@@ -181,9 +238,6 @@ def entry():
     yedges = [yedges_ch0, yedges_ch1, yedges_ch2, yedges_ch3]
 
     for k, histo in enumerate(histo2d):
-
-        pdf_waveforms_histo2d = PdfPages('{}/waveforms_histo2d_ch{}.pdf'.format(output_dir, k))
-
         text = 'channel {}'.format(k)
         anchored_text = AnchoredText(text, loc=1)
 
@@ -194,9 +248,11 @@ def entry():
         ax.add_artist(anchored_text)
         ax.set_xlabel('Time [ns]')
         ax.set_ylabel('Amplitude [V]'.format(k))
-        pdf_waveforms_histo2d.savefig(fig)
-        pdf_waveforms_histo2d.close()
+        plt.savefig('{}/waveforms_histo2d_ch{}.png'.format(output_dir, k))
         plt.close(fig)
+
+    end_time = time.time()
+    print("time of waveform process : ", end_time - start_time)
 
     if debug:
 
@@ -204,19 +260,24 @@ def entry():
 
         waveforms = read_data(file, debug=False)
         event_counter = 0
-        for time_widths, times, adc_data, event_range_center in waveforms:
-            if event_counter % 1000 == 0:
+        for time_widths, times, adc_data, event_rc in waveforms:
+            adc_data = get_float_waveform(adc_data, event_rc)
+            if event_counter % 100 == 0:
                 fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
                 # Triggers
-                axs[0, 0].plot(np.cumsum(time_widths[1]), adc_data[1], color='tab:red', label='signal : event {}'.format(event_counter))
+                axs[0, 0].plot(np.cumsum(time_widths[1]), adc_data[1], linestyle="solid", color='tab:red', label='signal : event {}'.format(event_counter))
                 axs[0, 0].legend()
-                axs[0, 1].plot(np.cumsum(time_widths[3]), adc_data[3], color='tab:red', label='signal : event {}'.format(event_counter))
+                axs[0, 0].set_ylim(-0.10, 1.00)
+                axs[0, 1].plot(np.cumsum(time_widths[3]), adc_data[3], linestyle="solid", color='tab:red', label='signal : event {}'.format(event_counter))
                 axs[0, 1].legend()
+                axs[0, 1].set_ylim(-0.10, 1.00)
                 # Signals
-                axs[1, 0].plot(np.cumsum(time_widths[0]), adc_data[0], color='tab:green', label='trigger')
+                axs[1, 0].plot(np.cumsum(time_widths[0]), adc_data[0], linestyle="solid", color='tab:green', label='trigger')
                 axs[1, 0].legend()
-                axs[1, 1].plot(np.cumsum(time_widths[2]), adc_data[2], color='tab:green', label='trigger')
+                axs[1, 0].set_ylim(-0.10,1.00)
+                axs[1, 1].plot(np.cumsum(time_widths[2]), adc_data[2], linestyle="solid", color='tab:green', label='trigger')
                 axs[1, 1].legend()
+                axs[1, 1].set_ylim(-0.10,1.00)
 
                 axs[1, 0].set_xlabel(r'Time [ns]')
                 axs[1, 1].set_xlabel(r'Time [ns]')
@@ -233,5 +294,3 @@ def entry():
 
 if __name__ == '__main__':
     entry()
-
-

@@ -41,7 +41,7 @@ def give_list_of_file(input_dir):
     return files
 
 
-def read_data(file, min_amplitude=0.005, debug=False):
+def read_data(file, debug=False):
 
     with DRS4BinaryFile(file) as f:
         board_id = f.board_ids[0]
@@ -60,19 +60,6 @@ def read_data(file, min_amplitude=0.005, debug=False):
         # times = np.insert(times, 0, 0, axis=1)
 
         for event in f:
-
-            # for k in range(len(adc_data)):
-            #     if k==0:
-            #         value = adc_data[k] < threshold
-            #     else:
-            #         value *= adc_data[k] < threshold
-            # if value is False:
-            #     continue
-            # threshold = min_amplitude
-            # if k==0:
-            #         value = adc_data[k] < threshold
-            #     else:
-            #         value *= adc_data[k] < threshold
 
             event_id = event.event_id
             event_timestamp = event.timestamp
@@ -156,68 +143,30 @@ def entry():
     waveforms = read_data(file=file, debug=False)
     # Waveform was set from -0.05 to 0.95 mV
     bins_y = np.linspace(-0.10, 1.0, 221)
-    times = []
     bin_edges = []
 
     event_counter = 0
 
     for time_widths, times, adc_data, event_rc in waveforms:
 
-        if event_counter % 1000 == 0:
-            print('Event id :', event_counter)
-
         if event_counter is 0:
-
             times = np.insert(times, 0, 0, axis=1)
             times = np.delete(times, -1, axis=1)
             bin_edges = time_widths / 2 + times
 
-            fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
-            # Triggers
-            ax[0, 0].hist(time_widths[1], 100, color='tab:red', label="Ch. 1 : Trigger", histtype='step')
-            ax[0, 0].legend()
-            ax[0, 1].hist(time_widths[3], 100, color='tab:red', label="Ch. 3 : Trigger", histtype='step')
-            ax[0, 1].legend()
-            # Signals
-            ax[1, 0].hist(time_widths[0], 100, color='tab:green', label="Ch. 0 : Signal", histtype='step')
-            ax[1, 0].legend()
-            ax[1, 1].hist(time_widths[2], 100, color='tab:green', label="Ch. 2 : Signal", histtype='step')
-            ax[1, 1].legend()
-
-            ax[1, 0].set_xlabel(r'$\Delta$ Time [ns]')
-            ax[1, 1].set_xlabel(r'$\Delta$ Time [ns]')
-            ax[0, 0].set_ylabel('Counts')
-            ax[1, 0].set_ylabel('Counts')
-            plt.tight_layout()
-            plt.savefig('{}/time_width_dist.png'.format(output_dir))
-            plt.close(fig)
-
-            fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
-            # Triggers
-            ax[0, 0].hist(times[1], bins=bin_edges[1], color='tab:red', label="Ch. 1 : Trigger", histtype='step')
-            ax[0, 0].legend()
-            ax[0, 1].hist(times[3], bins=bin_edges[3], color='tab:red', label="Ch. 3 : Trigger", histtype='step')
-            ax[0, 1].legend()
-            # Signals
-            ax[1, 0].hist(times[0], bins=bin_edges[0], color='tab:green', label="Ch. 0 : Signal", histtype='step')
-            ax[1, 0].legend()
-            ax[1, 1].hist(times[2], bins=bin_edges[2], color='tab:green', label="Ch. 2 : Signal", histtype='step')
-            ax[1, 1].legend()
-
-            ax[1, 0].set_xlabel(r'Time [ns]')
-            ax[1, 1].set_xlabel(r'Time [ns]')
-            ax[0, 0].set_ylabel('Counts')
-            ax[1, 0].set_ylabel('Counts')
-            plt.tight_layout()
-            plt.savefig('{}/times_dist.png'.format(output_dir))
-            plt.close(fig)
+        if event_counter % 1000 == 0:
+            print('Event id :', event_counter)
 
         adc_data = get_float_waveform(adc_data, event_rc)
 
-        temp_histo2d_ch0, xedges_ch0, yedges_ch0 = np.histogram2d(times[0], adc_data[0], bins=[bin_edges[0], bins_y])
-        temp_histo2d_ch1, xedges_ch1, yedges_ch1 = np.histogram2d(times[1], adc_data[1], bins=[bin_edges[1], bins_y])
-        temp_histo2d_ch2, xedges_ch2, yedges_ch2 = np.histogram2d(times[2], adc_data[2], bins=[bin_edges[2], bins_y])
-        temp_histo2d_ch3, xedges_ch3, yedges_ch3 = np.histogram2d(times[3], adc_data[3], bins=[bin_edges[3], bins_y])
+        threshold = 15./1000.
+        if (all(x < threshold for x in adc_data[1]) or all(x < threshold for x in adc_data[3])) is True:
+            continue
+        else:
+            temp_histo2d_ch0, xedges_ch0, yedges_ch0 = np.histogram2d(times[0], adc_data[0], bins=[bin_edges[0], bins_y])
+            temp_histo2d_ch1, xedges_ch1, yedges_ch1 = np.histogram2d(times[1], adc_data[1], bins=[bin_edges[1], bins_y])
+            temp_histo2d_ch2, xedges_ch2, yedges_ch2 = np.histogram2d(times[2], adc_data[2], bins=[bin_edges[2], bins_y])
+            temp_histo2d_ch3, xedges_ch3, yedges_ch3 = np.histogram2d(times[3], adc_data[3], bins=[bin_edges[3], bins_y])
 
         if event_counter == 0:
             histo2d_ch0 = np.zeros_like(temp_histo2d_ch0)
@@ -225,7 +174,6 @@ def entry():
             histo2d_ch2 = np.zeros_like(temp_histo2d_ch2)
             histo2d_ch3 = np.zeros_like(temp_histo2d_ch3)
         else:
-
             histo2d_ch0 += temp_histo2d_ch0
             histo2d_ch1 += temp_histo2d_ch1
             histo2d_ch2 += temp_histo2d_ch2
@@ -261,8 +209,53 @@ def entry():
         waveforms = read_data(file, debug=False)
         event_counter = 0
         for time_widths, times, adc_data, event_rc in waveforms:
+            if event_counter is 0:
+                times = np.insert(times, 0, 0, axis=1)
+                times = np.delete(times, -1, axis=1)
+                bin_edges = time_widths / 2 + times
+
+                fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
+                # Triggers
+                ax[0, 0].hist(time_widths[1], 100, color='tab:red', label="Ch. 1 : Trigger", histtype='step')
+                ax[0, 0].legend()
+                ax[0, 1].hist(time_widths[3], 100, color='tab:red', label="Ch. 3 : Trigger", histtype='step')
+                ax[0, 1].legend()
+                # Signals
+                ax[1, 0].hist(time_widths[0], 100, color='tab:green', label="Ch. 0 : Signal", histtype='step')
+                ax[1, 0].legend()
+                ax[1, 1].hist(time_widths[2], 100, color='tab:green', label="Ch. 2 : Signal", histtype='step')
+                ax[1, 1].legend()
+
+                ax[1, 0].set_xlabel(r'$\Delta$ Time [ns]')
+                ax[1, 1].set_xlabel(r'$\Delta$ Time [ns]')
+                ax[0, 0].set_ylabel('Counts')
+                ax[1, 0].set_ylabel('Counts')
+                plt.tight_layout()
+                plt.savefig('{}/time_width_dist.png'.format(output_dir))
+                plt.close(fig)
+
+                fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
+                # Triggers
+                ax[0, 0].hist(times[1], bins=bin_edges[1], color='tab:red', label="Ch. 1 : Trigger", histtype='step')
+                ax[0, 0].legend()
+                ax[0, 1].hist(times[3], bins=bin_edges[3], color='tab:red', label="Ch. 3 : Trigger", histtype='step')
+                ax[0, 1].legend()
+                # Signals
+                ax[1, 0].hist(times[0], bins=bin_edges[0], color='tab:green', label="Ch. 0 : Signal", histtype='step')
+                ax[1, 0].legend()
+                ax[1, 1].hist(times[2], bins=bin_edges[2], color='tab:green', label="Ch. 2 : Signal", histtype='step')
+                ax[1, 1].legend()
+
+                ax[1, 0].set_xlabel(r'Time [ns]')
+                ax[1, 1].set_xlabel(r'Time [ns]')
+                ax[0, 0].set_ylabel('Counts')
+                ax[1, 0].set_ylabel('Counts')
+                plt.tight_layout()
+                plt.savefig('{}/times_dist.png'.format(output_dir))
+                plt.close(fig)
+
             adc_data = get_float_waveform(adc_data, event_rc)
-            if event_counter % 100 == 0:
+            if event_counter % 1000 == 0:
                 fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
                 # Triggers
                 axs[0, 0].plot(np.cumsum(time_widths[1]), adc_data[1], linestyle="solid", color='tab:red', label='signal : event {}'.format(event_counter))

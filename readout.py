@@ -116,6 +116,7 @@ def discard_event(amplitude_matrix, min_threshold=-0.10):
     condition_ch1 = all(x < min_threshold for x in amplitude_matrix[1])
     condition_ch3 = all(x < min_threshold for x in amplitude_matrix[3])
     discard = condition_ch1 or condition_ch3
+
     return discard
 
 
@@ -152,6 +153,8 @@ def entry():
     print('File :', file)
     print('Debug :', debug)
 
+    name = file.split("/")[-1].split(".")[0]
+
     start_time = time.time()
 
     waveforms = read_data(file=file, debug=False)
@@ -161,6 +164,7 @@ def entry():
 
     event_counter = 0
     discarded_events = 0
+    min_threshold = 0.015
 
     for time_widths, times, adc_data, event_rc in waveforms:
 
@@ -172,7 +176,7 @@ def entry():
         if event_counter % 1000 == 0:
             print('Event id :', event_counter)
 
-        if discard_event(amplitude_matrix=adc_data, min_threshold=0.015) is True:
+        if discard_event(amplitude_matrix=adc_data, min_threshold=min_threshold) is True:
             discarded_events += 1
             continue
         else:
@@ -207,18 +211,27 @@ def entry():
     yedges = [yedges_ch0, yedges_ch1, yedges_ch2, yedges_ch3]
 
     for k, histo in enumerate(histo2d):
-        text = 'channel {}'.format(k)
-        anchored_text = AnchoredText(text, loc=1)
+        if k == 0 or k == 2:
+            tag = "Trigger"
+        elif k == 1 or k == 3:
+            tag = "Signal"
+        else:
+            print("Error in the index label")
+            exit
 
         fig, ax = plt.subplots()
+
+        text = '{} in Ch. {}'.format(tag, k)
+        anchored_text = AnchoredText(text, loc=1)
+
         im = ax.imshow(histo.T, origin='low', cmap=plt.cm.viridis, norm=LogNorm(), extent=[xedges[k][0], xedges[k][-1], yedges[k][0], yedges[k][-1]])
         ax.set_aspect(200)
         ax.add_artist(anchored_text)
         ax.set_xlabel('Time [ns]')
-        ax.set_ylabel('Amplitude [V]'.format(k))
+        ax.set_ylabel('Amplitude [V]')
         cax = fig.add_axes([ax.get_position().x1 + 0.01, ax.get_position().y0, 0.02, ax.get_position().height])
         plt.colorbar(im, cax=cax)
-        plt.savefig('{}/waveforms_histo2d_ch{}.png'.format(output_dir, k))
+        plt.savefig('{}/{}_waveforms_histo2d_ch{}.png'.format(output_dir, name, k))
         plt.close(fig)
 
     end_time = time.time()
@@ -226,7 +239,8 @@ def entry():
     print("events : {}".format(event_counter - discarded_events))
 
     if debug:
-        pdf_waveforms_plots = PdfPages('{}/waveforms_by_4.pdf'.format(output_dir))
+        start_time = time.time()
+        pdf_waveforms_plots = PdfPages('{}/{}_waveforms_by_4.pdf'.format(output_dir, name))
         waveforms = read_data(file, debug=False)
         event_counter = 0
 
@@ -238,14 +252,14 @@ def entry():
 
                 fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
                 # Triggers
-                ax[0, 0].hist(time_widths[1], 100, color='tab:red', label="Ch. 1 : Trigger", histtype='step')
+                ax[0, 0].hist(time_widths[0], 100, color='tab:red', label="Ch.0 : Trigger", histtype='step')
                 ax[0, 0].legend()
-                ax[0, 1].hist(time_widths[3], 100, color='tab:red', label="Ch. 3 : Trigger", histtype='step')
+                ax[0, 1].hist(time_widths[2], 100, color='tab:red', label="Ch.2 : Trigger", histtype='step')
                 ax[0, 1].legend()
                 # Signals
-                ax[1, 0].hist(time_widths[0], 100, color='tab:green', label="Ch. 0 : Signal", histtype='step')
+                ax[1, 0].hist(time_widths[1], 100, color='tab:green', label="Ch.1 : Signal", histtype='step')
                 ax[1, 0].legend()
-                ax[1, 1].hist(time_widths[2], 100, color='tab:green', label="Ch. 2 : Signal", histtype='step')
+                ax[1, 1].hist(time_widths[3], 100, color='tab:green', label="Ch.3 : Signal", histtype='step')
                 ax[1, 1].legend()
 
                 ax[1, 0].set_xlabel(r'$\Delta$ Time [ns]')
@@ -253,19 +267,19 @@ def entry():
                 ax[0, 0].set_ylabel('Counts')
                 ax[1, 0].set_ylabel('Counts')
                 plt.tight_layout()
-                plt.savefig('{}/time_width_dist.png'.format(output_dir))
+                plt.savefig('{}/{}_time_width_dist.png'.format(output_dir, name))
                 plt.close(fig)
 
                 fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
                 # Triggers
-                ax[0, 0].hist(times[1], bins=bin_edges[1], color='tab:red', label="Ch. 1 : Trigger", histtype='step')
+                ax[0, 0].hist(times[0], bins=bin_edges[0], color='tab:red', label="Ch. 0 : Trigger", histtype='step')
                 ax[0, 0].legend()
-                ax[0, 1].hist(times[3], bins=bin_edges[3], color='tab:red', label="Ch. 3 : Trigger", histtype='step')
+                ax[0, 1].hist(times[2], bins=bin_edges[2], color='tab:red', label="Ch. 2 : Trigger", histtype='step')
                 ax[0, 1].legend()
                 # Signals
-                ax[1, 0].hist(times[0], bins=bin_edges[0], color='tab:green', label="Ch. 0 : Signal", histtype='step')
+                ax[1, 0].hist(times[1], bins=bin_edges[1], color='tab:green', label="Ch. 1 : Signal", histtype='step')
                 ax[1, 0].legend()
-                ax[1, 1].hist(times[2], bins=bin_edges[2], color='tab:green', label="Ch. 2 : Signal", histtype='step')
+                ax[1, 1].hist(times[3], bins=bin_edges[3], color='tab:green', label="Ch. 3 : Signal", histtype='step')
                 ax[1, 1].legend()
 
                 ax[1, 0].set_xlabel(r'Time [ns]')
@@ -273,26 +287,26 @@ def entry():
                 ax[0, 0].set_ylabel('Counts')
                 ax[1, 0].set_ylabel('Counts')
                 plt.tight_layout()
-                plt.savefig('{}/times_dist.png'.format(output_dir))
+                plt.savefig('{}/{}_times_dist.png'.format(output_dir, name))
                 plt.close(fig)
 
-            if event_counter < 100:
-                if discard_event(amplitude_matrix=adc_data, min_threshold=0.015) is True:
+            if event_counter % 500 == 0:
+                if discard_event(amplitude_matrix=adc_data, min_threshold=min_threshold) is True:
                     continue
                 else:
                     fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
                     # Triggers
-                    axs[0, 0].plot(np.cumsum(time_widths[1]), adc_data[1], linestyle="solid", color='tab:red', label='signal : event {}'.format(event_counter))
+                    axs[0, 0].plot(np.cumsum(time_widths[0]), adc_data[0], linestyle="solid", color='tab:red', label='Ch. 0 - Trigger : event {}'.format(event_counter))
                     axs[0, 0].legend()
                     axs[0, 0].set_ylim(-0.10, 1.00)
-                    axs[0, 1].plot(np.cumsum(time_widths[3]), adc_data[3], linestyle="solid", color='tab:red', label='signal : event {}'.format(event_counter))
+                    axs[0, 1].plot(np.cumsum(time_widths[2]), adc_data[2], linestyle="solid", color='tab:red', label='Ch. 2 - Trigger : event {}'.format(event_counter))
                     axs[0, 1].legend()
                     axs[0, 1].set_ylim(-0.10, 1.00)
                     # Signals
-                    axs[1, 0].plot(np.cumsum(time_widths[0]), adc_data[0], linestyle="solid", color='tab:green', label='trigger')
+                    axs[1, 0].plot(np.cumsum(time_widths[1]), adc_data[1], linestyle="solid", color='tab:green', label='Ch. 1 - Signal : event {}'.format(event_counter))
                     axs[1, 0].legend()
                     axs[1, 0].set_ylim(-0.10, 1.00)
-                    axs[1, 1].plot(np.cumsum(time_widths[2]), adc_data[2], linestyle="solid", color='tab:green', label='trigger')
+                    axs[1, 1].plot(np.cumsum(time_widths[3]), adc_data[3], linestyle="solid", color='tab:green', label='Ch. 3 - Signal : event {}'.format(event_counter))
                     axs[1, 1].legend()
                     axs[1, 1].set_ylim(-0.10, 1.00)
 
@@ -307,6 +321,8 @@ def entry():
         pdf_waveforms_plots.close()
 
         print('End debug')
+        end_time = time.time()
+        print("time of debug : ", end_time - start_time)
 
 
 if __name__ == '__main__':
